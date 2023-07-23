@@ -1,0 +1,100 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+*.component
+*.vst
+*.aaxplugin
+*.vst3
+*.framework
+*.pyc
+
+# mac stuff
+.DS_Store
+*.plist
+*.entitlements
+*.nib
+*.pbxproj
+*.xcworkspacedata
+*.xcuserstate
+*.xcscheme
+*.xcbkptlist
+
+# juce
+**/_builds/
+**/Builds/
+
+# Old Framework files
+# VST2_SDK/pluginterfaces/*
+# VST2_SDK/public.sdk/*
+
+# cmake
+**/build/
+**/Build/
+cmake-build-debug/**
+
+# make
+/build
+/dist
+
+# vagrant
+.vagrant/**
+
+# python
+**/*.ipynb_checkpoints/
+*.ipynb_checkpoint
+*/venv/**
+venv/
+__pycache__
+.pytest_cache
+log.txt
+
+# project-specific python
+**/playground.py
+**/z-Playground.ipynb
+
+# max msp
+gen_dsp/*
+
+# matlab
+**/audioPlugin/
+
+# other
+*.tmp
+autosave.vcv
+**/plug_tests/*
+*.wav
+.idea/
+
+# CubeIDE
+.cproject
+.project
+.settings
