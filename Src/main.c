@@ -650,51 +650,163 @@
 
 /** Version 16 - use interrupt to print and toggle LED */
 
-#include <stm32f401xe.h>
+//#include <stm32f401xe.h>
+//#include <stdio.h>
+//#include "exti.h"
+//#include "uart.h"
+//
+//#define GPIOAEN                (1U<<0)
+//#define PIN5                   (1U<<5)
+//#define LED                    PIN5
+//
+//static void exti_callback(void);
+//
+//int main(void)
+//{
+//	RCC->AHB1ENR |= GPIOAEN;
+//	GPIOA->MODER |= (1U<<10);
+//	GPIOA->MODER &=~(1U<<11);
+//
+//	uart2_tx_init();
+//	pc13_exti_init();
+//
+//    while (1){}
+//}
+//
+///* Need to implement the interrupt. We determine that this is the
+// * correct one to implement by looking in the vector table in the startup
+// * file (startup_stm32f401retx.s). This one handles EXTI interrupt lines 10
+// * through 15. We are using interrupt EXTI 13.
+// * EXTI->PR is the pending register. */
+//void EXTI15_10_IRQHandler(void)
+//{
+//	if((EXTI->PR & LINE13) != 0)
+//	{
+//		/** Clear the PR flag */
+//		EXTI->PR |= LINE13;
+//
+//		/** Do something */
+//		exti_callback();
+//	}
+//}
+//
+//static void exti_callback(void)
+//{
+//	printf("BTN pressed...\n\r");
+//	GPIOA->ODR ^=LED;
+//}
+
+
+/* Version 17 - Developing the UART Interrupt driver
+ * To test, run this in debug, click on the play button,
+ * connect CoolTerm, click in its text area, and press a
+ *  key on the keyboard. That value should be displayed
+ * in the Live Expressions area of STMCubeIDE.
+ * */
+
+//#include <stm32f401xe.h>
+//#include <stdio.h>
+//#include "uart.h"
+//
+//#define GPIOAEN                (1U<<0)
+//#define GPIOA_5                (1U<<5)
+//#define LED_PIN                GPIOA_5
+//
+//char key;
+//
+//static void uart_callback(void);
+//
+//int main(void)
+//{
+//	RCC->AHB1ENR |= GPIOAEN;
+//	GPIOA->MODER |= (1U<<10);
+//	GPIOA->MODER &=~(1U<<11);
+//
+//	uart2_rx_interrupt_init();
+//
+//    while (1){}
+//}
+//
+//static void uart_callback(void)
+//{
+//	key = USART2->DR;
+//
+//	if(key == '1')
+//	{
+//		GPIOA->ODR |= LED_PIN;
+//	}
+//	else
+//	{
+//		GPIOA->ODR &=~LED_PIN;
+//	}
+//}
+//
+///** Because we are using an interrupt, we need to override
+// *  the handler to meet our needs */
+//void USART2_IRQHandler(void)
+//{
+//	/** Check if RXNE is set (read data register) */
+//	if(USART2->SR & SR_RXNE)
+//	{
+//		uart_callback();
+//	}
+//}
+
+
+/** Version 18 - Developing the ADC Interrupt driver
+ * To test, run this in debug, click on the play button, connect CoolTerm.
+ * The value of sensor_value (random numbers because nothing is connected
+ * to ADC1) will be displayed in both the Live Expressions area of STMCubeIDE
+ * as well as in CoolTerm.
+ * */
+
 #include <stdio.h>
-#include "exti.h"
+#include <stdint.h>
+#include <stm32f401xe.h>
 #include "uart.h"
+#include "adc.h"
 
-#define GPIOAEN                (1U<<0)
-#define PIN5                   (1U<<5)
-#define LED                    PIN5
-
-static void exti_callback(void);
+static void adc_callback(void);
+uint32_t sensor_value;
 
 int main(void)
 {
-	RCC->AHB1ENR |= GPIOAEN;
-	GPIOA->MODER |= (1U<<10);
-	GPIOA->MODER &=~(1U<<11);
-
-	uart2_tx_init();
-	pc13_exti_init();
+    uart2_tx_init();
+    pa1_adc_interrupt_init();
+    start_conversion();
 
     while (1){}
 }
 
-/* Need to implement the interrupt. We determine that this is the
- * correct one to implement by looking in the vector table in the startup
- * file (startup_stm32f401retx.s). This one handles EXTI interrupt lines 10
- * through 15. We are using interrupt EXTI 13.
- * EXTI->PR is the pending register. */
-void EXTI15_10_IRQHandler(void)
+/** Using an interrupt allows us to avoid using blocking code
+ * like while(!(ADC1->SR & SR_EOC)){} in adc_read() */
+static void adc_callback(void)
 {
-	if((EXTI->PR & LINE13) != 0)
-	{
-		/** Clear the PR flag */
-		EXTI->PR |= LINE13;
+    //start_conversion();
 
-		/** Do something */
-		exti_callback();
-	}
+	sensor_value = ADC1->DR;  // don't need to call adc_read()
+	printf("Sensor value = %d \n\r", (int)sensor_value);
 }
 
-static void exti_callback(void)
+/** The name of the handler can be found in the vector table */
+void ADC_IRQHandler(void)
 {
-	printf("BTN pressed...\n\r");
-	GPIOA->ODR ^=LED;
+	/** Check for End Of Conversion in SR */
+    if((ADC1->SR & SR_EOC) != 0)
+    {
+    	/** Clear EOC */
+    	ADC1->SR &=~SR_EOC;
+    	/** read the ADC */
+    	adc_callback();
+    }
 }
+
+
+
+
+
+
+
 
 
 

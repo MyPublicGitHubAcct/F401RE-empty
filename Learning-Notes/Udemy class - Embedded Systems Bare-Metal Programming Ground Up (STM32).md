@@ -2057,49 +2057,250 @@ void pc13_exti_init()
 }
 ```
 
-
-### Example - Testing the GPIO Interrupt driver
-
-main.c
-
-```cpp
-```
-
-x.h
-
-```cpp
-```
-
-x.c
-
-```cpp
-```
-
-x.c
-
-```cpp
-```
-
 ### Example - Developing the UART Interrupt driver
 
+In the reference manual, the acronym "__IE__" stands for _interrupt enable_. For example, control register 1 (USART_CR1)  include PEIE, TXEIE, TCIE, etc.
+
 main.c
 
 ```cpp
+/* Version 17 - Developing the UART Interrupt driver
+ * To test, run this in debug, click on the play button, connect CoolTerm, 
+ * click in its text area, and press a key on the keyboard. That value 
+ * should be displayed in the Live Expressions area of STMCubeIDE.
+ * */
+
+#include <stm32f401xe.h>
+#include <stdio.h>
+#include "uart.h"
+
+#define GPIOAEN                (1U<<0)
+#define GPIOA_5                (1U<<5)
+#define LED_PIN                GPIOA_5
+
+char key;
+
+static void uart_callback(void);
+
+int main(void)
+{
+	RCC->AHB1ENR |= GPIOAEN;
+	GPIOA->MODER |= (1U<<10);
+	GPIOA->MODER &=~(1U<<11);
+
+	uart2_rx_interrupt_init();
+
+    while (1){}
+}
+
+static void uart_callback(void)
+{
+	key = USART2->DR;
+
+	if(key == '1')
+	{
+		GPIOA->ODR |= LED_PIN;
+	}
+	else
+	{
+		GPIOA->ODR &=~LED_PIN;
+	}
+}
+
+/** Because we are using an interrupt, we need to override
+ *  the handler to meet our needs */
+void USART2_IRQHandler(void)
+{
+	/** Check if RXNE is set (read data register) */
+	if(USART2->SR & SR_RXNE)
+	{
+		uart_callback();
+	}
+}
 ```
 
-x.h
+uart.h
 
 ```cpp
+#ifndef UART_H_
+#define UART_H_
+
+#include <stm32f401xe.h>
+
+#define GPIOAEN         (1U<<0)
+#define UART2EN         (1U<<17)
+#define CR1_TE          (1U<<3)
+#define CR1_RE          (1U<<2)
+#define CR1_UE          (1U<<13)
+#define SR_TXE          (1U<<7)
+#define SR_RXNE         (1U<<5)
+#define CR1_RXNEIE      (1U<<5)
+#define SYS_FREQ        16000000
+#define APB1_CLK        SYS_FREQ
+#define UART_BAUDREATE  115200
+
+void uart2_rxtx_init(void);
+void uart2_rx_interrupt_init(void);
+void uart2_tx_init(void);
+char uart2_read(void);
+
+#endif /** UART_H_ */
 ```
 
-x.c
+uart.c
 
 ```cpp
-```
+#include "uart.h"
+#include <stdint.h>
 
-x.c
+static void uart_set_baudrate(USART_TypeDef *USARTx, uint32_t periphClk, uint32_t baudRate);
+static uint16_t compute_uart_bd(uint32_t periphClk, uint32_t baudRate);
 
-```cpp
+void uart2_write(int ch);
+
+int __io_putchar(int ch)
+{
+	uart2_write(ch);
+	return ch;
+}
+
+void uart2_rxtx_init(void)
+{
+	/**************** configure the UART GIO pin **********/
+    RCC->AHB1ENR |= GPIOAEN;
+
+    /** Set PA2 mode to alternate function mode */
+    GPIOA->MODER &=~(1U<<4);
+    GPIOA->MODER |= (1U<<5);
+
+    /** Set PA2 alternate function type to UART_TX (AF07) = 0111 */
+    GPIOA->AFR[0] |= (1U<<8);
+    GPIOA->AFR[0] |= (1U<<9);
+    GPIOA->AFR[0] |= (1U<<10);
+    GPIOA->AFR[0] &=~(1U<<11);
+
+    /** Set PA3 mode to alternate function mode */
+    GPIOA->MODER &=~(1U<<6);
+    GPIOA->MODER |= (1U<<7);
+
+    /** Set PA3 alternate function type to UART_RX (AF07) = 0111 */
+    GPIOA->AFR[0] |= (1U<<12);
+    GPIOA->AFR[0] |= (1U<<13);
+    GPIOA->AFR[0] |= (1U<<14);
+    GPIOA->AFR[0] &=~(1U<<15);
+
+    /**************** Configure uart module ***************/
+    RCC->APB1ENR |= UART2EN;
+
+    /** Configure baudrate */
+    uart_set_baudrate(USART2, APB1_CLK, UART_BAUDREATE);
+
+    /** Configure the transfer direction */
+    USART2->CR1 = (CR1_TE | CR1_RE); // use or operation to allow both;
+
+    /** Enable uart module */
+    USART2->CR1 |= CR1_UE;
+}
+
+void uart2_rx_interrupt_init(void)
+{
+	/**************** configure the UART GIO pin **********/
+    RCC->AHB1ENR |= GPIOAEN;
+
+    /** Set PA2 mode to alternate function mode */
+    GPIOA->MODER &=~(1U<<4);
+    GPIOA->MODER |= (1U<<5);
+
+    /** Set PA2 alternate function type to UART_TX (AF07) = 0111 */
+    GPIOA->AFR[0] |= (1U<<8);
+    GPIOA->AFR[0] |= (1U<<9);
+    GPIOA->AFR[0] |= (1U<<10);
+    GPIOA->AFR[0] &=~(1U<<11);
+
+    /** Set PA3 mode to alternate function mode */
+    GPIOA->MODER &=~(1U<<6);
+    GPIOA->MODER |= (1U<<7);
+
+    /** Set PA3 alternate function type to UART_RX (AF07) = 0111 */
+    GPIOA->AFR[0] |= (1U<<12);
+    GPIOA->AFR[0] |= (1U<<13);
+    GPIOA->AFR[0] |= (1U<<14);
+    GPIOA->AFR[0] &=~(1U<<15);
+
+    /**************** Configure uart module ***************/
+    RCC->APB1ENR |= UART2EN;
+
+    /** Configure baudrate */
+    uart_set_baudrate(USART2, APB1_CLK, UART_BAUDREATE);
+
+    /** Configure the transfer direction */
+    USART2->CR1 = (CR1_TE | CR1_RE); // use 'or' operation to allow both
+    USART2->CR1 |= CR1_RXNEIE;       // enable the RXNE interrupt
+
+    /*Enable UART2 interrupt in NVIC*/
+    NVIC_EnableIRQ(USART2_IRQn);
+
+    /** Enable uart module */
+    USART2->CR1 |= CR1_UE;
+}
+
+void uart2_tx_init(void)
+{
+	/**************** Configure uart gpio pin ***************/
+	/** Enable clock access to gpioa */
+	RCC->AHB1ENR |= GPIOAEN;
+
+	/** Set PA2 mode to alternate function mode */
+	GPIOA->MODER &=~(1U<<4);
+	GPIOA->MODER |= (1U<<5);
+
+	/** Set PA2 alternate function type to UART_TX (AF07) */
+	GPIOA->AFR[0] |= (1U<<8);
+	GPIOA->AFR[0] |= (1U<<9);
+	GPIOA->AFR[0] |= (1U<<10);
+	GPIOA->AFR[0] &= ~(1U<<11);
+
+	/**************** Configure uart module ***************/
+	/** Enable clock access to uart2 */
+	RCC->APB1ENR |= UART2EN;
+
+	/*Configure baudrate*/
+	uart_set_baudrate(USART2, APB1_CLK, UART_BAUDREATE);
+
+	/** Configure the transfer direction */
+	 USART2->CR1 =  CR1_TE;
+
+	/** Enable uart module */
+	 USART2->CR1 |= CR1_UE;
+}
+
+char uart2_read(void)
+{
+    /** Make sure the receive data register is not empty */
+    while(!(USART2->SR & SR_RXNE)){}
+
+    /** Read the data */
+    return USART2->DR;
+}
+
+void uart2_write(int ch)
+{
+    /** Make sure the transmit data register is empty */
+    while(!(USART2->SR & SR_TXE)){}
+
+    /** Write to the transmit data register */
+    USART2->DR = (ch & 0xFF);
+}
+
+static void uart_set_baudrate(USART_TypeDef *USARTx, uint32_t periphClk, uint32_t baudRate)
+{
+	USARTx->BRR = compute_uart_bd(periphClk, baudRate);
+}
+
+static uint16_t compute_uart_bd(uint32_t periphClk, uint32_t baudRate)
+{
+	return ((periphClk + (baudRate / 2U)) / baudRate);
+}
 ```
 
 ### Example - Developing the ADC Interrupt driver
@@ -2107,21 +2308,345 @@ x.c
 main.c
 
 ```cpp
+/** Version 18 - Developing the ADC Interrupt driver
+ * To test, run this in debug, click on the play button, connect CoolTerm.
+ * The value of sensor_value (random numbers because nothing is connected
+ * to ADC1) will be displayed in both the Live Expressions area of STMCubeIDE
+ * as well as in CoolTerm.
+ * */
+
+#include <stdio.h>
+#include <stdint.h>
+#include <stm32f401xe.h>
+#include "uart.h"
+#include "adc.h"
+
+static void adc_callback(void);
+uint32_t sensor_value;
+
+int main(void)
+{
+    uart2_tx_init();
+    pa1_adc_interrupt_init();
+    start_conversion();
+
+    while (1){}
+}
+
+/** Using an interrupt allows us to avoid using blocking code
+ * like while(!(ADC1->SR & SR_EOC)){} in adc_read() */
+static void adc_callback(void)
+{
+    //start_conversion();
+
+	sensor_value = ADC1->DR;  // don't need to call adc_read()
+	printf("Sensor value = %d \n\r", (int)sensor_value);
+}
+
+/** The name of the handler can be found in the vector table */
+void ADC_IRQHandler(void)
+{
+	/** Check for End Of Conversion in SR */
+    if((ADC1->SR & SR_EOC) != 0)
+    {
+    	/** Clear EOC */
+    	ADC1->SR &=~SR_EOC;
+    	/** read the ADC */
+    	adc_callback();
+    }
+}
 ```
 
-x.h
+adc.h
 
 ```cpp
+#ifndef ADC_H_
+#define ADC_H_
+
+#include <stdint.h>
+
+#define GPIOAEN           (1U<<0)
+#define ADC1EN            (1U<<8)
+#define ADC_CH1           (1U<<0)
+#define ADC_SEQ_LEN_1     0x00
+#define CR2_ADON          (1U<<0)
+#define CR2_SWSTART       (1U<<30)
+#define SR_EOC            (1U<<1)
+#define CR2_CONT          (1U<<1) // continuous conversion bit
+#define CR1_EOCIE         (1U<<5) // ADC control register EOC interrupt enabled
+
+void pa1_adc_init(void);
+void pa1_adc_interrupt_init(void);
+void start_conversion(void);
+uint32_t adc_read(void);
+
+#endif /* ADC_H_ */
 ```
 
-x.c
+adc.c
 
 ```cpp
+#include <stm32f401xe.h>
+#include "adc.h"
+
+void pa1_adc_init(void)
+{
+	/******* Configure the ADC GPIO pin *******/
+	/** Enable clock access to GPIOA */
+	RCC->AHB1ENR |= GPIOAEN;
+	/** Set the mode of PA1 to analog input */
+	GPIOA->MODER |= (1U<<2);
+	GPIOA->MODER |= (1U<<3);
+
+	/******* Configure the ADC module *********/
+	/** Enable clock access to ADC */
+	RCC->APB2ENR |= ADC1EN;
+	/** Conversion sequence start */
+	ADC1->SQR3 = ADC_CH1;
+	/** Conversion sequence length */
+	/**
+	 * Example: ADC to be configured with three channels...ch2, ch3, ch5
+	 * Order we want to sample the channels:
+	 * first  = ch5 (write binary 5 in SQ1)
+	 * second = ch2 (write binary 2 in SQ2)
+	 * third  = ch3 (write binary 3 in SQ3)
+	 * The length of the sequence (L) is the number of channels to convert.
+	 *
+	 * Here, we just fill SQR1 with zeros
+	 * */
+	ADC1->SQR1 = ADC_SEQ_LEN_1;
+	/** Enable ADC module */
+	ADC1->CR2 |= CR2_ADON;
+}
+
+void pa1_adc_interrupt_init(void)
+{
+	/******* Configure the ADC GPIO pin *******/
+	/** Enable clock access to GPIOA */
+	RCC->AHB1ENR |= GPIOAEN;
+	/** Set the mode of PA1 to analog input */
+	GPIOA->MODER |= (1U<<2);
+	GPIOA->MODER |= (1U<<3);
+
+	/******* Configure the ADC module *********/
+	/** Enable clock access to ADC */
+	RCC->APB2ENR |= ADC1EN;
+	/** Conversion sequence start */
+	ADC1->SQR3 = ADC_CH1;
+	/** Conversion sequence length */
+	ADC1->SQR1 = ADC_SEQ_LEN_1;
+	/** Enable ADC end-of-conversion interrupt */
+	ADC1->CR1 |= CR1_EOCIE;
+	/** Enable ADC interrupt in NVIC */
+	NVIC_EnableIRQ(ADC_IRQn);
+	/** Enable ADC module */
+	ADC1->CR2 |= CR2_ADON;
+}
+
+void start_conversion(void)
+{
+	// to enable continuous conversion, remove otherwise
+	ADC1->CR2 |= CR2_CONT;
+
+	/** Start ADC conversion
+	 * Need to use software start (SWSTART), which is pin 30 on ADC control
+	 * register 2 (in this case). This can be done directly or with a timer.
+	 * */
+	ADC1->CR2 |= CR2_SWSTART;
+}
+
+uint32_t adc_read(void)
+{
+	/** Wait for conversion to be complete - check EOC in status register */
+	while(!(ADC1->SR & SR_EOC)){}
+	/** Read converted result from the data register */
+	return (ADC1->DR);
+}
+
 ```
 
-x.c
+uart.h
 
 ```cpp
+#ifndef UART_H_
+#define UART_H_
+
+#include <stm32f401xe.h>
+
+#define GPIOAEN         (1U<<0)
+#define UART2EN         (1U<<17)
+#define CR1_TE          (1U<<3)
+#define CR1_RE          (1U<<2)
+#define CR1_UE          (1U<<13)
+#define SR_TXE          (1U<<7)
+#define SR_RXNE         (1U<<5)
+#define CR1_RXNEIE      (1U<<5)
+#define SYS_FREQ        16000000
+#define APB1_CLK        SYS_FREQ
+#define UART_BAUDREATE  115200
+
+void uart2_rxtx_init(void);
+void uart2_rx_interrupt_init(void);
+void uart2_tx_init(void);
+char uart2_read(void);
+
+#endif /** UART_H_ */
+```
+
+uart.c
+
+```cpp
+#include "uart.h"
+#include <stdint.h>
+
+static void uart_set_baudrate(USART_TypeDef *USARTx, uint32_t periphClk, uint32_t baudRate);
+static uint16_t compute_uart_bd(uint32_t periphClk, uint32_t baudRate);
+
+void uart2_write(int ch);
+
+int __io_putchar(int ch)
+{
+	uart2_write(ch);
+	return ch;
+}
+
+void uart2_rxtx_init(void)
+{
+	/**************** configure the UART GIO pin **********/
+    RCC->AHB1ENR |= GPIOAEN;
+
+    /** Set PA2 mode to alternate function mode */
+    GPIOA->MODER &=~(1U<<4);
+    GPIOA->MODER |= (1U<<5);
+
+    /** Set PA2 alternate function type to UART_TX (AF07) = 0111 */
+    GPIOA->AFR[0] |= (1U<<8);
+    GPIOA->AFR[0] |= (1U<<9);
+    GPIOA->AFR[0] |= (1U<<10);
+    GPIOA->AFR[0] &=~(1U<<11);
+
+    /** Set PA3 mode to alternate function mode */
+    GPIOA->MODER &=~(1U<<6);
+    GPIOA->MODER |= (1U<<7);
+
+    /** Set PA3 alternate function type to UART_RX (AF07) = 0111 */
+    GPIOA->AFR[0] |= (1U<<12);
+    GPIOA->AFR[0] |= (1U<<13);
+    GPIOA->AFR[0] |= (1U<<14);
+    GPIOA->AFR[0] &=~(1U<<15);
+
+    /**************** Configure uart module ***************/
+    RCC->APB1ENR |= UART2EN;
+
+    /** Configure baudrate */
+    uart_set_baudrate(USART2, APB1_CLK, UART_BAUDREATE);
+
+    /** Configure the transfer direction */
+    USART2->CR1 = (CR1_TE | CR1_RE); // use or operation to allow both;
+
+    /** Enable uart module */
+    USART2->CR1 |= CR1_UE;
+}
+
+void uart2_rx_interrupt_init(void)
+{
+	/**************** configure the UART GIO pin **********/
+    RCC->AHB1ENR |= GPIOAEN;
+
+    /** Set PA2 mode to alternate function mode */
+    GPIOA->MODER &=~(1U<<4);
+    GPIOA->MODER |= (1U<<5);
+
+    /** Set PA2 alternate function type to UART_TX (AF07) = 0111 */
+    GPIOA->AFR[0] |= (1U<<8);
+    GPIOA->AFR[0] |= (1U<<9);
+    GPIOA->AFR[0] |= (1U<<10);
+    GPIOA->AFR[0] &=~(1U<<11);
+
+    /** Set PA3 mode to alternate function mode */
+    GPIOA->MODER &=~(1U<<6);
+    GPIOA->MODER |= (1U<<7);
+
+    /** Set PA3 alternate function type to UART_RX (AF07) = 0111 */
+    GPIOA->AFR[0] |= (1U<<12);
+    GPIOA->AFR[0] |= (1U<<13);
+    GPIOA->AFR[0] |= (1U<<14);
+    GPIOA->AFR[0] &=~(1U<<15);
+
+    /**************** Configure uart module ***************/
+    RCC->APB1ENR |= UART2EN;
+
+    /** Configure baudrate */
+    uart_set_baudrate(USART2, APB1_CLK, UART_BAUDREATE);
+
+    /** Configure the transfer direction */
+    USART2->CR1 = (CR1_TE | CR1_RE); // use 'or' operation to allow both
+    USART2->CR1 |= CR1_RXNEIE;       // enable the RXNE interrupt
+
+    /*Enable UART2 interrupt in NVIC*/
+    NVIC_EnableIRQ(USART2_IRQn);
+
+    /** Enable uart module */
+    USART2->CR1 |= CR1_UE;
+}
+
+void uart2_tx_init(void)
+{
+	/**************** Configure uart gpio pin ***************/
+	/** Enable clock access to gpioa */
+	RCC->AHB1ENR |= GPIOAEN;
+
+	/** Set PA2 mode to alternate function mode */
+	GPIOA->MODER &=~(1U<<4);
+	GPIOA->MODER |= (1U<<5);
+
+	/** Set PA2 alternate function type to UART_TX (AF07) */
+	GPIOA->AFR[0] |= (1U<<8);
+	GPIOA->AFR[0] |= (1U<<9);
+	GPIOA->AFR[0] |= (1U<<10);
+	GPIOA->AFR[0] &= ~(1U<<11);
+
+	/**************** Configure uart module ***************/
+	/** Enable clock access to uart2 */
+	RCC->APB1ENR |= UART2EN;
+
+	/*Configure baudrate*/
+	uart_set_baudrate(USART2, APB1_CLK, UART_BAUDREATE);
+
+	/** Configure the transfer direction */
+	 USART2->CR1 =  CR1_TE;
+
+	/** Enable uart module */
+	 USART2->CR1 |= CR1_UE;
+}
+
+char uart2_read(void)
+{
+    /** Make sure the receive data register is not empty */
+    while(!(USART2->SR & SR_RXNE)){}
+
+    /** Read the data */
+    return USART2->DR;
+}
+
+void uart2_write(int ch)
+{
+    /** Make sure the transmit data register is empty */
+    while(!(USART2->SR & SR_TXE)){}
+
+    /** Write to the transmit data register */
+    USART2->DR = (ch & 0xFF);
+}
+
+static void uart_set_baudrate(USART_TypeDef *USARTx, uint32_t periphClk, uint32_t baudRate)
+{
+	USARTx->BRR = compute_uart_bd(periphClk, baudRate);
+}
+
+static uint16_t compute_uart_bd(uint32_t periphClk, uint32_t baudRate)
+{
+	return ((periphClk + (baudRate / 2U)) / baudRate);
+}
 ```
 
 ### Example - Developing the Systick Interrupt driver

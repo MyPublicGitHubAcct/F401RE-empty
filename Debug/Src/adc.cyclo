@@ -1,3 +1,5 @@
-../Src/adc.c:17:6:pa1_adc_init	1
-../Src/adc.c:47:6:start_conversion	1
-../Src/adc.c:59:10:adc_read	2
+../Inc/core_cm4.h:1688:22:__NVIC_EnableIRQ	2
+../Src/adc.c:7:6:pa1_adc_init	1
+../Src/adc.c:37:6:pa1_adc_interrupt_init	1
+../Src/adc.c:61:6:start_conversion	1
+../Src/adc.c:73:10:adc_read	2
