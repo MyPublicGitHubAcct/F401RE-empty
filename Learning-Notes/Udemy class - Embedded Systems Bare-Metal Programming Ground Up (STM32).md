@@ -2654,24 +2654,490 @@ static uint16_t compute_uart_bd(uint32_t periphClk, uint32_t baudRate)
 main.c
 
 ```cpp
-```
+#include <stdio.h>
+#include <stm32f401xe.h>
+#include "uart.h"
+#include "systick.h"
 
-x.h
+#define GPIOAEN                (1U<<0)
+#define PIN5                   (1U<<5)
+#define LED                    PIN5
+
+int main(void)
+{
+	RCC->AHB1ENR |= GPIOAEN;
+	GPIOA->MODER |= (1U<<10);
+	GPIOA->MODER &=~(1U<<11);
+
+    uart2_rxtx_init();
+    systick_1hz_interrupt();
+
+    while (1){}
+}
+
+static void systick_callback(void)
+{
+	printf("A second passed\n\r");
+	GPIOA->ODR ^= LED;     // toggle the led pin
+}
+
+/** override handler */
+void SysTick_Handler(void)
+{
+	systick_callback();
+}
+```
+systick.h
 
 ```cpp
+#ifndef SYSTICK_H_
+#define SYSTICK_H_
+
+/** Need to look in the generic guide from ARM to get all information for SysTick
+ *  not included in ST guides. There are separate guides for M4 and M7 */
+
+#define SYSTICK_LOAD_VAL    16000    // cycles per millisecond (clock source is 16MHz)
+#define CTRL_ENABLE         (1U<<0)  // enable bit (0 disabled, 1 enabled)
+#define CTRL_CLKSRC         (1U<<2)  // system clock bit (0 external, 1 system)
+#define CTRL_COUNTFLAG      (1U<<16) // (returns 1 if timer counted to 0 since last time this was read)
+#define CTRL_TICKINT        (1U<<1)  // counting down to 0 asserts the SysTick exception request
+
+#define ONE_SEC_LOAD        16000000 // cycles per second (clock source is 16MHz)
+
+void systickDelayMs(int delay);
+void systick_1hz_interrupt(void);
+
+#endif /* SYSTICK_H_ */
 ```
 
-x.c
+systick.c
 
 ```cpp
+#include <stm32f401xe.h>
+#include "systick.h"
+
+void systickDelayMs(int delay)
+{
+	/** reload with number of clocks per millisecond */
+	/* Note: LOAD is referred to as RELOAD in the ARM guide. */
+	SysTick->LOAD = SYSTICK_LOAD_VAL;
+
+	/** clear SysTick current value register */
+	/* Note: VAL is SysTick to as SYST_CVR in the ARM guide. */
+	SysTick->VAL = 0;
+
+	/** enable SysTick and select internal clock source */
+	/* Note: Binary OR Operator (|) copies a bit if it exists in either operand. Both
+	 * are set to 1 above, so SysTick->CTRL is set to 1. */
+	SysTick->CTRL = CTRL_ENABLE | CTRL_CLKSRC;
+
+	for(int i=0; i<delay; i++)
+	{
+		/** wait until the COUNTFLAG is set */
+		/* Note: Binary AND Operator (&) copies a bit to the result if it exists in
+		 * both operands. So, this translates to if */
+		while((SysTick->CTRL & CTRL_COUNTFLAG) == 0){}
+	}
+	SysTick->CTRL = 0;
+}
+
+void systick_1hz_interrupt(void)
+{
+	/** reload with number of clocks per second */
+	/* Note: LOAD is referred to as RELOAD in the ARM guide. */
+	SysTick->LOAD = ONE_SEC_LOAD - 1;  // speed of the LED blink
+
+	/** clear SysTick current value register */
+	/* Note: VAL is SysTick to as SYST_CVR in the ARM guide. */
+	SysTick->VAL = 0;
+
+	/** enable SysTick and select internal clock source */
+	/* Note: Binary OR Operator (|) copies a bit if it exists in either operand. Both
+	 * are set to 1 above, so SysTick->CTRL is set to 1. */
+	SysTick->CTRL = CTRL_ENABLE | CTRL_CLKSRC;
+
+	/** enable SysTick interrupt */
+    SysTick->CTRL |= CTRL_TICKINT;
+}
 ```
 
-x.c
+uart.h
 
 ```cpp
+#ifndef UART_H_
+#define UART_H_
+
+#include <stm32f401xe.h>
+
+#define GPIOAEN         (1U<<0)
+#define UART2EN         (1U<<17)
+#define CR1_TE          (1U<<3)
+#define CR1_RE          (1U<<2)
+#define CR1_UE          (1U<<13)
+#define SR_TXE          (1U<<7)
+#define SR_RXNE         (1U<<5)
+#define CR1_RXNEIE      (1U<<5)
+#define SYS_FREQ        16000000
+#define APB1_CLK        SYS_FREQ
+#define UART_BAUDREATE  115200
+
+void uart2_rxtx_init(void);
+void uart2_rx_interrupt_init(void);
+void uart2_tx_init(void);
+char uart2_read(void);
+
+#endif /** UART_H_ */
 ```
+
+uart.c
+
+```cpp
+#include "uart.h"
+#include <stdint.h>
+
+static void uart_set_baudrate(USART_TypeDef *USARTx, uint32_t periphClk, uint32_t baudRate);
+static uint16_t compute_uart_bd(uint32_t periphClk, uint32_t baudRate);
+
+void uart2_write(int ch);
+
+int __io_putchar(int ch)
+{
+	uart2_write(ch);
+	return ch;
+}
+
+void uart2_rxtx_init(void)
+{
+	/**************** configure the UART GIO pin **********/
+    RCC->AHB1ENR |= GPIOAEN;
+
+    /** Set PA2 mode to alternate function mode */
+    GPIOA->MODER &=~(1U<<4);
+    GPIOA->MODER |= (1U<<5);
+
+    /** Set PA2 alternate function type to UART_TX (AF07) = 0111 */
+    GPIOA->AFR[0] |= (1U<<8);
+    GPIOA->AFR[0] |= (1U<<9);
+    GPIOA->AFR[0] |= (1U<<10);
+    GPIOA->AFR[0] &=~(1U<<11);
+
+    /** Set PA3 mode to alternate function mode */
+    GPIOA->MODER &=~(1U<<6);
+    GPIOA->MODER |= (1U<<7);
+
+    /** Set PA3 alternate function type to UART_RX (AF07) = 0111 */
+    GPIOA->AFR[0] |= (1U<<12);
+    GPIOA->AFR[0] |= (1U<<13);
+    GPIOA->AFR[0] |= (1U<<14);
+    GPIOA->AFR[0] &=~(1U<<15);
+
+    /**************** Configure uart module ***************/
+    RCC->APB1ENR |= UART2EN;
+
+    /** Configure baudrate */
+    uart_set_baudrate(USART2, APB1_CLK, UART_BAUDREATE);
+
+    /** Configure the transfer direction */
+    USART2->CR1 = (CR1_TE | CR1_RE); // use or operation to allow both;
+
+    /** Enable uart module */
+    USART2->CR1 |= CR1_UE;
+}
+
+void uart2_rx_interrupt_init(void)
+{
+	/**************** configure the UART GIO pin **********/
+    RCC->AHB1ENR |= GPIOAEN;
+
+    /** Set PA2 mode to alternate function mode */
+    GPIOA->MODER &=~(1U<<4);
+    GPIOA->MODER |= (1U<<5);
+
+    /** Set PA2 alternate function type to UART_TX (AF07) = 0111 */
+    GPIOA->AFR[0] |= (1U<<8);
+    GPIOA->AFR[0] |= (1U<<9);
+    GPIOA->AFR[0] |= (1U<<10);
+    GPIOA->AFR[0] &=~(1U<<11);
+
+    /** Set PA3 mode to alternate function mode */
+    GPIOA->MODER &=~(1U<<6);
+    GPIOA->MODER |= (1U<<7);
+
+    /** Set PA3 alternate function type to UART_RX (AF07) = 0111 */
+    GPIOA->AFR[0] |= (1U<<12);
+    GPIOA->AFR[0] |= (1U<<13);
+    GPIOA->AFR[0] |= (1U<<14);
+    GPIOA->AFR[0] &=~(1U<<15);
+
+    /**************** Configure uart module ***************/
+    RCC->APB1ENR |= UART2EN;
+
+    /** Configure baudrate */
+    uart_set_baudrate(USART2, APB1_CLK, UART_BAUDREATE);
+
+    /** Configure the transfer direction */
+    USART2->CR1 = (CR1_TE | CR1_RE); // use 'or' operation to allow both
+    USART2->CR1 |= CR1_RXNEIE;       // enable the RXNE interrupt
+
+    /*Enable UART2 interrupt in NVIC*/
+    NVIC_EnableIRQ(USART2_IRQn);
+
+    /** Enable uart module */
+    USART2->CR1 |= CR1_UE;
+}
+
+void uart2_tx_init(void)
+{
+	/**************** Configure uart gpio pin ***************/
+	/** Enable clock access to gpioa */
+	RCC->AHB1ENR |= GPIOAEN;
+
+	/** Set PA2 mode to alternate function mode */
+	GPIOA->MODER &=~(1U<<4);
+	GPIOA->MODER |= (1U<<5);
+
+	/** Set PA2 alternate function type to UART_TX (AF07) */
+	GPIOA->AFR[0] |= (1U<<8);
+	GPIOA->AFR[0] |= (1U<<9);
+	GPIOA->AFR[0] |= (1U<<10);
+	GPIOA->AFR[0] &= ~(1U<<11);
+
+	/**************** Configure uart module ***************/
+	/** Enable clock access to uart2 */
+	RCC->APB1ENR |= UART2EN;
+
+	/*Configure baudrate*/
+	uart_set_baudrate(USART2, APB1_CLK, UART_BAUDREATE);
+
+	/** Configure the transfer direction */
+	 USART2->CR1 =  CR1_TE;
+
+	/** Enable uart module */
+	 USART2->CR1 |= CR1_UE;
+}
+
+char uart2_read(void)
+{
+    /** Make sure the receive data register is not empty */
+    while(!(USART2->SR & SR_RXNE)){}
+
+    /** Read the data */
+    return USART2->DR;
+}
+
+void uart2_write(int ch)
+{
+    /** Make sure the transmit data register is empty */
+    while(!(USART2->SR & SR_TXE)){}
+
+    /** Write to the transmit data register */
+    USART2->DR = (ch & 0xFF);
+}
+
+static void uart_set_baudrate(USART_TypeDef *USARTx, uint32_t periphClk, uint32_t baudRate)
+{
+	USARTx->BRR = compute_uart_bd(periphClk, baudRate);
+}
+
+static uint16_t compute_uart_bd(uint32_t periphClk, uint32_t baudRate)
+{
+	return ((periphClk + (baudRate / 2U)) / baudRate);
+}
+```
+
 
 ### Example - Developing the Timer Interrupt driver
+
+main.c
+
+```cpp
+#include <stdio.h>
+#include <stdint.h>
+#include <stm32f401xe.h>
+#include "uart.h"
+#include "tim.h"
+
+#define GPIOAEN                (1U<<0)
+#define PIN5                   (1U<<5)
+#define LED                    PIN5
+
+void tim2_callback(void);
+
+int main(void)
+{
+	RCC->AHB1ENR |= GPIOAEN;
+	GPIOA->MODER |= (1U<<10);
+	GPIOA->MODER &=~(1U<<11);
+
+	uart2_tx_init();
+	tim2_1hz_interrupt_init();
+
+    while (1){}
+}
+
+void tim2_callback(void)
+{
+	printf("Another second passed !! \n\r");
+	GPIOA->ODR ^= LED;     // toggle the led pin
+}
+
+/** implement interrupt request handler */
+void TIM2_IRQHandler(void)
+{
+	/** clear update interrupt flag */
+	TIM2->SR &=~SR_UIF;
+
+	/** do something */
+	tim2_callback();
+}
+```
+
+tim.h
+
+```cpp
+#ifndef TIM_H_
+#define TIM_H_
+
+#define SR_UIF            (1U<<0)  // timer status register
+#define SR_CC1IF          (1U<<0)  // capture/compare 3 interrupt flag
+
+/** TIM2 and TIM3 are enabled through the APB1 bus. */
+#define TIM2EN           (1U<<0)
+#define CR1_CEN          (1U<<0)
+#define DIER_UIE         (1U<<0)
+
+#define OC_TOGGLE        ((1U<<4) | (1U<<5))
+#define CCER_CC1E        (1U<<0) // enable compare mode
+#define GPIOAEN          (1U<<0)
+#define AFR5_TIM         (1U<<20)
+
+#define TIM3EN           (1U<<1)
+#define AFR6_TIM         (1U<<25)
+#define CCER_CC1S        (1U<<0)
+
+void tim2_1hz_init(void);
+void tim2_1hz_interrupt_init(void);
+void tim2_pa5_output_compare(void);
+void tim3_pa6_input_capture(void);
+
+#endif /* TIM_H_ */
+```
+
+tim.c
+
+```cpp
+#include <stm32f401xe.h>
+#include "tim.h"
+
+void tim2_1hz_init(void)
+{
+	/** enable clock access to timer 2 */
+	RCC->APB1ENR |= TIM2EN;
+
+	/** set the pre-scaler value to 1Hz */
+	TIM2->PSC = 1600-1;  // 16,000,000 / 10,000
+
+	/** set auto-reload value */
+	TIM2->ARR = 10000-1;
+
+	/** clear counter */
+	TIM2->CNT = 0;
+
+	/** enable the timer */
+	TIM2->CR1 = CR1_CEN;
+}
+
+void tim2_1hz_interrupt_init(void)
+{
+	/** enable clock access to timer 2 */
+	RCC->APB1ENR |= TIM2EN;
+
+	/** set the pre-scaler value to 1Hz */
+	TIM2->PSC = 1600-1;  // 16,000,000 / 10,000
+
+	/** set auto-reload value */
+	TIM2->ARR = 10000-1;
+
+	/** clear counter */
+	TIM2->CNT = 0;
+
+	/** enable the timer */
+	TIM2->CR1 = CR1_CEN;
+
+	/** enable TIM interrupt */
+    TIM2->DIER |= DIER_UIE;
+
+	/** enable TIM interrupt in NVIC */
+    NVIC_EnableIRQ(TIM2_IRQn);
+
+}
+
+void tim2_pa5_output_compare(void)
+{
+	/** enable clock access to GPIOA */
+	RCC->AHB1ENR |= GPIOAEN;
+
+	/** set PA5 mode to alternate function */
+	GPIOA->MODER &=~(1U<<10);
+	GPIOA->MODER |= (1U<<11);
+
+	/** set PA5 alternate function type to TIM2_CH1 (AF01) */
+	GPIOA->AFR[0] |= AFR5_TIM;
+
+	/** enable clock access to timer 2 */
+	RCC->APB1ENR |= TIM2EN;
+
+	/** set the pre-scaler value to 1Hz */
+	TIM2->PSC = 1600-1;  // 16,000,000 / 10,000
+
+	/** set auto-reload value */
+	TIM2->ARR = 10000-1;
+
+	/** set output compare toggle mode */
+	TIM2->CCMR1 = OC_TOGGLE;
+
+	/** enable timer 2, channel 1 in compare mode */
+    TIM2->CCER |= CCER_CC1E;
+
+	/** clear counter */
+	TIM2->CNT = 0;
+
+	/** enable the timer */
+	TIM2->CR1 = CR1_CEN;
+}
+
+void tim3_pa6_input_capture(void)
+{
+	/** enable clock access to GPIOA */
+	RCC->AHB1ENR |= GPIOAEN;
+
+	/** set PA6 mode to alternate function */
+	GPIOA->MODER &=~(1U<<12);
+	GPIOA->MODER |= (1U<<13);
+
+	/** set PA6 alternate function type to TIM3_CH1 (AF02) */
+	GPIOA->AFR[0] |= AFR6_TIM;
+
+	/** enable clock access to timer 3 */
+	RCC->APB1ENR |= TIM3EN;
+
+	/** set the pre-scaler */
+	TIM3->PSC = 16000-1;  // 16,000,000 / 16,000
+
+	/** set CH1 to input capture mode */
+	TIM3->CCMR1 = CCER_CC1S;
+
+	/** set CH1 to capture at rising edge (which is the default) */
+	TIM3->CCER = CCER_CC1E;
+
+	/** enable timer 3 */
+	TIM3->CR1 = CR1_CEN;
+}
+```
+
+## Direct Memory Access (DMA)
+
+### Example - Developing the UART Transmitter DMA driver
 
 main.c
 
@@ -2693,8 +3159,141 @@ x.c
 ```cpp
 ```
 
+## Inter-Integrated Circuit (I2C)
 
+### Example - Implementing the I2C Init function
 
+main.c
+
+```cpp
+```
+
+x.h
+
+```cpp
+```
+
+x.c
+
+```cpp
+```
+
+x.c
+
+```cpp
+```
+
+### Example - Implementing the I2C Byte Read function
+
+main.c
+
+```cpp
+```
+
+x.h
+
+```cpp
+```
+
+x.c
+
+```cpp
+```
+
+x.c
+
+```cpp
+```
+
+### Example - Implementing the I2C Burst Read function
+
+main.c
+
+```cpp
+```
+
+x.h
+
+```cpp
+```
+
+x.c
+
+```cpp
+```
+
+x.c
+
+```cpp
+```
+
+### Example - Implementing the I2C Burst Write function
+
+main.c
+
+```cpp
+```
+
+x.h
+
+```cpp
+```
+
+x.c
+
+```cpp
+```
+
+x.c
+
+```cpp
+```
+
+### Example - Configuring the ADLX345 Accelerometer using the I2C driver
+
+main.c
+
+```cpp
+```
+
+x.h
+
+```cpp
+```
+
+x.c
+
+```cpp
+```
+
+x.c
+
+```cpp
+```
+
+## Serial Peripheral Interface
+
+### Example - do soemthing...
+
+main.c
+
+```cpp
+```
+
+x.h
+
+```cpp
+```
+
+x.c
+
+```cpp
+```
+
+x.c
+
+```cpp
+```
 
 
 ## TEMPLATES

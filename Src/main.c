@@ -760,53 +760,122 @@
  * as well as in CoolTerm.
  * */
 
+//#include <stdio.h>
+//#include <stdint.h>
+//#include <stm32f401xe.h>
+//#include "uart.h"
+//#include "adc.h"
+//
+//static void adc_callback(void);
+//uint32_t sensor_value;
+//
+//int main(void)
+//{
+//    uart2_tx_init();
+//    pa1_adc_interrupt_init();
+//    start_conversion();
+//
+//    while (1){}
+//}
+//
+///** Using an interrupt allows us to avoid using blocking code
+// * like while(!(ADC1->SR & SR_EOC)){} in adc_read() */
+//static void adc_callback(void)
+//{
+//    //start_conversion();
+//
+//	sensor_value = ADC1->DR;  // don't need to call adc_read()
+//	printf("Sensor value = %d \n\r", (int)sensor_value);
+//}
+//
+///** The name of the handler can be found in the vector table */
+//void ADC_IRQHandler(void)
+//{
+//	/** Check for End Of Conversion in SR */
+//    if((ADC1->SR & SR_EOC) != 0)
+//    {
+//    	/** Clear EOC */
+//    	ADC1->SR &=~SR_EOC;
+//    	/** read the ADC */
+//    	adc_callback();
+//    }
+//}
+
+
+/** Version 19 Developing the Systick Interrupt driver */
+
+//#include <stdio.h>
+//#include <stm32f401xe.h>
+//#include "uart.h"
+//#include "systick.h"
+//
+//#define GPIOAEN                (1U<<0)
+//#define PIN5                   (1U<<5)
+//#define LED                    PIN5
+//
+//int main(void)
+//{
+//	RCC->AHB1ENR |= GPIOAEN;
+//	GPIOA->MODER |= (1U<<10);
+//	GPIOA->MODER &=~(1U<<11);
+//
+//    uart2_rxtx_init();
+//    systick_1hz_interrupt();
+//
+//    while (1){}
+//}
+//
+//static void systick_callback(void)
+//{
+//	printf("A second passed\n\r");
+//	GPIOA->ODR ^= LED;     // toggle the led pin
+//}
+//
+///** override handler */
+//void SysTick_Handler(void)
+//{
+//	systick_callback();
+//}
+
+/** Version 20 Developing the Timer Interrupt driver */
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stm32f401xe.h>
 #include "uart.h"
-#include "adc.h"
+#include "tim.h"
 
-static void adc_callback(void);
-uint32_t sensor_value;
+#define GPIOAEN                (1U<<0)
+#define PIN5                   (1U<<5)
+#define LED                    PIN5
+
+void tim2_callback(void);
 
 int main(void)
 {
-    uart2_tx_init();
-    pa1_adc_interrupt_init();
-    start_conversion();
+	RCC->AHB1ENR |= GPIOAEN;
+	GPIOA->MODER |= (1U<<10);
+	GPIOA->MODER &=~(1U<<11);
+
+	uart2_tx_init();
+	tim2_1hz_interrupt_init();
 
     while (1){}
 }
 
-/** Using an interrupt allows us to avoid using blocking code
- * like while(!(ADC1->SR & SR_EOC)){} in adc_read() */
-static void adc_callback(void)
+void tim2_callback(void)
 {
-    //start_conversion();
-
-	sensor_value = ADC1->DR;  // don't need to call adc_read()
-	printf("Sensor value = %d \n\r", (int)sensor_value);
+	printf("Another second passed !! \n\r");
+	GPIOA->ODR ^= LED;     // toggle the led pin
 }
 
-/** The name of the handler can be found in the vector table */
-void ADC_IRQHandler(void)
+/** implement interrupt request handler */
+void TIM2_IRQHandler(void)
 {
-	/** Check for End Of Conversion in SR */
-    if((ADC1->SR & SR_EOC) != 0)
-    {
-    	/** Clear EOC */
-    	ADC1->SR &=~SR_EOC;
-    	/** read the ADC */
-    	adc_callback();
-    }
+	/** clear update interrupt flag */
+	TIM2->SR &=~SR_UIF;
+
+	/** do something */
+	tim2_callback();
 }
-
-
-
-
-
-
-
-
-
 
