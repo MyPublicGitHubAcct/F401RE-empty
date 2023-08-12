@@ -16,6 +16,58 @@ int __io_putchar(int ch)
 	return ch;
 }
 
+void dma1_stream6_init(uint32_t src, uint32_t dst, uint32_t len)
+{
+	/** enable clock access to DMA1 */
+	RCC->AHB1ENR |= DMA1EN;
+
+	/** disable the DMA1, stream 6 */
+	DMA1_Stream6->CR &=~DMA_CR_EN;
+
+	/** wait until DMA1 stream 6 is disabled */
+	while(DMA1_Stream6->CR & DMA_CR_EN){}
+
+	/** declare interrupt flags for DMA1 stream 6 */
+	DMA1->HIFCR |= (1U<<16);
+	DMA1->HIFCR |= (1U<<18);
+	DMA1->HIFCR |= (1U<<19);
+	DMA1->HIFCR |= (1U<<20);
+	DMA1->HIFCR |= (1U<<21);
+
+	/** set the destination buffer */
+	DMA1_Stream6->PAR = dst;
+
+	/** set the source buffer */
+	DMA1_Stream6->M0AR = src;
+
+	/** set the length */
+	DMA1_Stream6->NDTR = len;
+
+	/** select the stream 6, channel 4 */
+	DMA1_Stream6->CR = CHSEL4; // clear whole register and write this bit
+
+	/** enable memory increment */
+	DMA1_Stream6->CR |= DMA_MEM_INC;
+
+	/** configure the transfer direction (memory to peripheral) */
+	DMA1_Stream6->CR |= DMA_DIR_MEM_TO_PERIPH;
+
+	/** enable DMA transfer complete interrupt */
+	DMA1_Stream6->CR |= DMA_CR_TCIE;
+
+	/** enable direct mode / disable the FIFO mode, enable direct mode */
+	DMA1_Stream6->FCR = 0;  // write zero to whole register
+
+	/** enable DMA1, stream 6 */
+	DMA1_Stream6->CR |= DMA_CR_EN;
+
+	/** enable UART2 transmitter DMA */
+	USART2->CR3 |= UART_CR3_DMAT;
+
+	/** enable DMA interrupt in NVIC */
+	NVIC_EnableIRQ(DMA1_Stream6_IRQn);
+}
+
 void uart2_rxtx_init(void)
 {
 	/**************** configure the UART GIO pin **********/

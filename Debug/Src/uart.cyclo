@@ -1,9 +1,10 @@
 ../Inc/core_cm4.h:1688:22:__NVIC_EnableIRQ	2
 ../Src/uart.c:13:5:__io_putchar	1
-../Src/uart.c:19:6:uart2_rxtx_init	1
-../Src/uart.c:57:6:uart2_rx_interrupt_init	1
-../Src/uart.c:99:6:uart2_tx_init	1
-../Src/uart.c:129:6:uart2_read	2
-../Src/uart.c:138:6:uart2_write	2
-../Src/uart.c:147:13:uart_set_baudrate	1
-../Src/uart.c:152:17:compute_uart_bd	1
+../Src/uart.c:19:6:dma1_stream6_init	2
+../Src/uart.c:71:6:uart2_rxtx_init	1
+../Src/uart.c:109:6:uart2_rx_interrupt_init	1
+../Src/uart.c:151:6:uart2_tx_init	1
+../Src/uart.c:181:6:uart2_read	2
+../Src/uart.c:190:6:uart2_write	2
+../Src/uart.c:199:13:uart_set_baudrate	1
+../Src/uart.c:204:17:compute_uart_bd	1

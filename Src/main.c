@@ -839,43 +839,100 @@
 
 /** Version 20 Developing the Timer Interrupt driver */
 
-#include <stdio.h>
-#include <stdint.h>
+//#include <stdio.h>
+//#include <stdint.h>
+//#include <stm32f401xe.h>
+//#include "uart.h"
+//#include "tim.h"
+//
+//#define GPIOAEN                (1U<<0)
+//#define PIN5                   (1U<<5)
+//#define LED                    PIN5
+//
+//void tim2_callback(void);
+//
+//int main(void)
+//{
+//	RCC->AHB1ENR |= GPIOAEN;
+//	GPIOA->MODER |= (1U<<10);
+//	GPIOA->MODER &=~(1U<<11);
+//
+//	uart2_tx_init();
+//	tim2_1hz_interrupt_init();
+//
+//    while (1){}
+//}
+//
+//void tim2_callback(void)
+//{
+//	printf("Another second passed !! \n\r");
+//	GPIOA->ODR ^= LED;     // toggle the led pin
+//}
+//
+///** implement interrupt request handler */
+//void TIM2_IRQHandler(void)
+//{
+//	/** clear update interrupt flag */
+//	TIM2->SR &=~SR_UIF;
+//
+//	/** do something */
+//	tim2_callback();
+//}
+
+
+/** Version 21 - Developing the UART Transmitter DMA driver
+ * To test, run this in debug, click on the play button,
+ * connect CoolTerm, click in its text area, and press a
+ *  key on the keyboard. That value should be displayed
+ * in the Live Expressions area of STMCubeIDE.
+ * */
+
 #include <stm32f401xe.h>
+#include <stdio.h>
 #include "uart.h"
-#include "tim.h"
 
-#define GPIOAEN                (1U<<0)
-#define PIN5                   (1U<<5)
-#define LED                    PIN5
+#define GPIOAEN               (1U<<0)
+#define GPIOA_5               (1U<<5)
+#define LED_PIN               GPIOA_5
 
-void tim2_callback(void);
+#define HISR_TCIF6            (1U<<21)
+#define HIFCR_CTCIF6          (1U<<21)
+
+static void dma_callback(void);
 
 int main(void)
 {
+	char message[31] = "Hello from Stm32 DMA transfer\n\r";
+
 	RCC->AHB1ENR |= GPIOAEN;
 	GPIOA->MODER |= (1U<<10);
 	GPIOA->MODER &=~(1U<<11);
 
 	uart2_tx_init();
-	tim2_1hz_interrupt_init();
+	dma1_stream6_init((uint32_t)message, (uint32_t)&USART2->DR, 31);
 
     while (1){}
 }
 
-void tim2_callback(void)
+static void dma_callback(void)
 {
-	printf("Another second passed !! \n\r");
-	GPIOA->ODR ^= LED;     // toggle the led pin
+	GPIOA->ODR |= LED_PIN;
 }
 
-/** implement interrupt request handler */
-void TIM2_IRQHandler(void)
+void DMA1_Stream6_IRQHandler(void)
 {
-	/** clear update interrupt flag */
-	TIM2->SR &=~SR_UIF;
+	/** check for transfer complete interrupt */
+	if(DMA1->HISR & HISR_TCIF6)
+	{
+		/** clear flag */
+		DMA1->HIFCR |= HIFCR_CTCIF6;
 
-	/** do something */
-	tim2_callback();
+		/** do something */
+		dma_callback();
+	}
 }
+
+
+
+
 
