@@ -883,7 +883,7 @@
 /** Version 21 - Developing the UART Transmitter DMA driver
  * To test, run this in debug, click on the play button,
  * connect CoolTerm, click in its text area, and press a
- *  key on the keyboard. That value should be displayed
+ * key on the keyboard. That value should be displayed
  * in the Live Expressions area of STMCubeIDE.
  * */
 
@@ -932,7 +932,9 @@ void DMA1_Stream6_IRQHandler(void)
 	}
 }
 
-
+/** Version 22 - I2C
+ * ?
+ **/
 
 
 
